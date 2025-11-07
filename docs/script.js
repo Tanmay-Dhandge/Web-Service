@@ -15,8 +15,7 @@ const modeToggle = document.getElementById('mode-toggle');
 
 // Create a client instance with a unique ID
 const clientID = "web-client-" + parseInt(Math.random() * 100000);
-// **FIX 1: Use secure port 8884 for HTTPS**
-const mqttClient = new Paho.MQTT.Client("broker.hivemq.com", 8884, clientID);
+const mqttClient = new Paho.MQTT.Client("broker.hivemq.com", 8000, clientID);
 
 // Set callback handlers
 mqttClient.onConnectionLost = onConnectionLost;
@@ -34,7 +33,7 @@ let controlState = {
 mqttClient.connect({
   onSuccess: onConnect,
   onFailure: (err) => { console.log("Failed to connect: ", err); },
-  useSSL: true // **FIX 1: Must be lowercase 'true'**
+  useSSL: false
 });
 
 function onConnect() {
@@ -55,11 +54,7 @@ function onConnectionLost(responseObject) {
     
     // Attempt to reconnect
     setTimeout(() => {
-        mqttClient.connect({ 
-            onSuccess: onConnect, 
-            onFailure: (err) => { console.log("Failed to reconnect: ", err); },
-            useSSL: false
-        });
+        mqttClient.connect({ onSuccess: onConnect, onFailure: (err) => { console.log("Failed to reconnect: ", err); } });
     }, 2000);
   }
 }
@@ -139,24 +134,12 @@ modeToggle.addEventListener('change', () => {
 function sendControlCommand(device) {
     if (!isManualMode) return;
     
-    // 1. Send the command (same as before)
     const payload = JSON.stringify({ device: device });
     const message = new Paho.MQTT.Message(payload);
     message.destinationName = MQTT_CONTROL_TOPIC;
+    
     mqttClient.send(message);
     console.log(`Sent command: ${payload}`);
-
-    // **FIX 2: Optimistically update the local state**
-    if (device === 'fan') {
-      controlState.fan = !controlState.fan; // Toggle the state
-    } else if (device === 'light') {
-      controlState.light = !controlState.light;
-    } else if (device === 'door') {
-      controlState.door = !controlState.door;
-    }
-
-    // **FIX 2: Immediately update the UI**
-    updateControlUI();
 }
 
 function toggleFan() {
