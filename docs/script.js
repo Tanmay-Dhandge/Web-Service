@@ -58,7 +58,7 @@ function onConnectionLost(responseObject) {
         mqttClient.connect({ 
             onSuccess: onConnect, 
             onFailure: (err) => { console.log("Failed to reconnect: ", err); },
-            useSSL: true 
+            useSSL: false
         });
     }, 2000);
   }
