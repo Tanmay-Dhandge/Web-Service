@@ -15,7 +15,8 @@ const modeToggle = document.getElementById('mode-toggle');
 
 // Create a client instance with a unique ID
 const clientID = "web-client-" + parseInt(Math.random() * 100000);
-const mqttClient = new Paho.MQTT.Client("broker.hivemq.com", 8000, clientID);
+// **FIX 1: Use secure port 8884 for HTTPS**
+const mqttClient = new Paho.MQTT.Client("broker.hivemq.com", 8884, clientID);
 
 // Set callback handlers
 mqttClient.onConnectionLost = onConnectionLost;
@@ -33,7 +34,7 @@ let controlState = {
 mqttClient.connect({
   onSuccess: onConnect,
   onFailure: (err) => { console.log("Failed to connect: ", err); },
-  useSSL: True
+  useSSL: true // **FIX 1: Must be lowercase 'true'**
 });
 
 function onConnect() {
@@ -54,7 +55,11 @@ function onConnectionLost(responseObject) {
     
     // Attempt to reconnect
     setTimeout(() => {
-        mqttClient.connect({ onSuccess: onConnect, onFailure: (err) => { console.log("Failed to reconnect: ", err); } });
+        mqttClient.connect({ 
+            onSuccess: onConnect, 
+            onFailure: (err) => { console.log("Failed to reconnect: ", err); },
+            useSSL: true 
+        });
     }, 2000);
   }
 }
@@ -141,8 +146,7 @@ function sendControlCommand(device) {
     mqttClient.send(message);
     console.log(`Sent command: ${payload}`);
 
-    // --- ADD THIS NEW SECTION ---
-    // 2. Optimistically update the local state
+    // **FIX 2: Optimistically update the local state**
     if (device === 'fan') {
       controlState.fan = !controlState.fan; // Toggle the state
     } else if (device === 'light') {
@@ -151,9 +155,8 @@ function sendControlCommand(device) {
       controlState.door = !controlState.door;
     }
 
-    // 3. Immediately update the UI
+    // **FIX 2: Immediately update the UI**
     updateControlUI();
-    // --- END OF NEW SECTION ---
 }
 
 function toggleFan() {
