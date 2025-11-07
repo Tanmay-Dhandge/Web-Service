@@ -1,6 +1,6 @@
 // --- CONFIGURATION ---
 // 1. Set your Render backend URL (find this on your Render dashboard)
-const SERVER_URL = "https://your-project-name.onrender.com"; 
+const SERVER_URL = "https://web-service-ae9n.onrender.com"; 
 
 // 2. Set your ESP32-CAM Stream URL (find this in the Arduino Serial Monitor after flashing the camera)
 const CAMERA_STREAM_URL = "http://192.168.1.10/stream"; // <-- IMPORTANT: Change this IP
