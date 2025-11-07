@@ -1,6 +1,6 @@
 // script.js
 // --- MQTT (Paho) setup ---
-const mqttHost = "broker.hivemq.com"; // change to your HiveMQ host or broker endpoint
+const mqttHost = "afc8a0ac2ccf462c8f92b932403518df.s1.eu.hivemq.cloud"; // change to your HiveMQ host or broker endpoint
 const mqttPort = 8000; // WebSocket port (broker dependent). HiveMQ public websocket: 8000 or 8000? check docs
 const clientId = "webclient-" + Math.random().toString(16).substr(2, 8);
 
