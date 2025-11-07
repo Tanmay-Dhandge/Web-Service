@@ -1,193 +1,80 @@
-// --- CONFIGURATION ---
-// 1. Set your MQTT topics (MUST match your ESP32)
-const MQTT_DATA_TOPIC = "myhome/esp32/data";
-const MQTT_CONTROL_TOPIC = "myhome/esp32/control";
+// script.js
+// --- MQTT (Paho) setup ---
+const mqttHost = "broker.hivemq.com"; // change to your HiveMQ host or broker endpoint
+const mqttPort = 8000; // WebSocket port (broker dependent). HiveMQ public websocket: 8000 or 8000? check docs
+const clientId = "webclient-" + Math.random().toString(16).substr(2, 8);
 
-// 2. Set your ESP32-CAM Stream URL
-const CAMERA_STREAM_URL = "http://192.168.1.10/stream"; // <-- IMPORTANT: Change this IP
-// --- END CONFIGURATION ---
+const mqttClient = new Paho.MQTT.Client(mqttHost, Number(mqttPort), "/mqtt", clientId);
 
-
-// --- MQTT CLIENT ---
-const statusDot = document.getElementById('status-dot');
-const statusText = document.getElementById('status');
-const modeToggle = document.getElementById('mode-toggle');
-
-// Create a client instance with a unique ID
-const clientID = "web-client-" + parseInt(Math.random() * 100000);
-// **FIX 1: Use secure port 8884 for HTTPS**
-const mqttClient = new Paho.MQTT.Client("broker.hivemq.com", 8884, clientID);
-
-// Set callback handlers
-mqttClient.onConnectionLost = onConnectionLost;
-mqttClient.onMessageArrived = onMessageArrived;
-
-// Global state for controls
-let isManualMode = false;
-let controlState = {
-  fan: 0, // 0 = OFF, 1 = ON
-  light: 0,
-  door: 0 // 0 = CLOSED, 1 = OPEN
+// on connect
+mqttClient.onConnectionLost = function (responseObject) {
+  console.log("MQTT lost", responseObject);
+  document.getElementById('status-dot').style.background = '#ef4444';
+  document.getElementById('status').innerText = 'MQTT disconnected';
+};
+mqttClient.onMessageArrived = function (message) {
+  try {
+    const payload = JSON.parse(message.payloadString);
+    // update UI elements
+    if (payload.dht_temp !== undefined) document.getElementById('dhtTemp').innerText = payload.dht_temp.toFixed(1);
+    if (payload.bmp_temp !== undefined) document.getElementById('bmpTemp').innerText = payload.bmp_temp.toFixed(1);
+    if (payload.dht_hum !== undefined) document.getElementById('envHum').innerText = payload.dht_hum.toFixed(0);
+    if (payload.pressure_hpa !== undefined) document.getElementById('envPress').innerText = payload.pressure_hpa.toFixed(1);
+    if (payload.mq_status !== undefined) document.getElementById('mqStatus').innerText = payload.mq_status;
+    if (payload.mq_raw !== undefined) document.getElementById('mqRaw').innerText = payload.mq_raw;
+    if (payload.mq_status === "BAD") document.getElementById('mqIssue').innerText = "High pollutants detected";
+    else document.getElementById('mqIssue').innerText = "None";
+    if (payload.rfid_uid !== undefined) document.getElementById('rfidUid').innerText = payload.rfid_uid;
+    if (payload.rfid_access !== undefined) document.getElementById('rfidAccess').innerText = payload.rfid_access;
+    // combined environment temp: take average or choose source
+    if (payload.dht_temp && payload.bmp_temp) {
+      const avg = (payload.dht_temp + payload.bmp_temp) / 2.0;
+      document.getElementById('envTemp').innerText = avg.toFixed(1);
+    } else if (payload.dht_temp) {
+      document.getElementById('envTemp').innerText = payload.dht_temp.toFixed(1);
+    }
+    // status LED
+    document.getElementById('status-dot').style.background = '#10b981';
+    document.getElementById('status').innerText = 'Connected';
+  } catch (e) {
+    console.error("bad mqtt payload", e);
+  }
 };
 
-// Connect to the broker
-mqttClient.connect({
-  onSuccess: onConnect,
-  onFailure: (err) => { console.log("Failed to connect: ", err); },
-  useSSL: true // **FIX 1: Must be lowercase 'true'**
-});
-
 function onConnect() {
-  console.log("Connected to HiveMQ!");
-  statusDot.style.background = '#10b981'; // Green
-  statusText.innerText = 'Connected';
-
-  // Subscribe to the data topic
-  mqttClient.subscribe(MQTT_DATA_TOPIC);
-  console.log("Subscribed to: " + MQTT_DATA_TOPIC);
+  console.log("MQTT connected");
+  mqttClient.subscribe("home/env");
+  document.getElementById('status-dot').style.background = '#10b981';
+  document.getElementById('status').innerText = 'Connected to MQTT';
 }
 
-function onConnectionLost(responseObject) {
-  if (responseObject.errorCode !== 0) {
-    console.log("onConnectionLost:" + responseObject.errorMessage);
-    statusDot.style.background = '#ef4444'; // Red
-    statusText.innerText = 'Disconnected';
-    
-    // Attempt to reconnect
-    setTimeout(() => {
-        mqttClient.connect({ 
-            onSuccess: onConnect, 
-            onFailure: (err) => { console.log("Failed to reconnect: ", err); },
-            useSSL: true 
-        });
-    }, 2000);
-  }
+function onConnectFail(err) {
+  console.error("MQTT connect fail", err);
+  document.getElementById('status').innerText = 'MQTT connection failed';
 }
 
-// Main message handler
-function onMessageArrived(message) {
-  try {
-    const data = JSON.parse(message.payloadString);
-    // console.log('Received data:', data); // Uncomment for debugging
+const connectOptions = {
+  onSuccess: onConnect,
+  onFailure: onConnectFail,
+  useSSL: false
+};
 
-    // Environment Card
-    updateElement('envTemp', data.envTemp, 1);
-    updateElement('envHum', data.envHum, 1);
-    updateElement('envPress', data.envPress, 1);
-    updateElement('dhtTemp', data.dhtTemp, 1);
-    updateElement('bmpTemp', data.bmpTemp, 1);
-
-    // Air Quality Card
-    updateElement('mqStatus', data.mqStatus);
-    updateElement('mqRaw', data.mqRaw);
-    updateElement('mqIssue', data.mqIssue, null, data.mqIssue === "None" ? "#10b981" : "#b91c1c");
-
-    // RFID Card
-    updateElement('rfidUid', data.rfidUid);
-    updateElement('rfidAccess', data.rfidAccess, null, data.rfidAccess === "Granted" ? "#10b981" : "#b91c1c");
-
-    // Update control panel UI based on state from hardware
-    if (data.controls) {
-      controlState = data.controls;
-      updateControlUI();
-    }
-  } catch (e) {
-    console.error("Error parsing JSON: ", e);
-  }
+try {
+  mqttClient.connect(connectOptions);
+} catch (err) {
+  console.error("MQTT init error", err);
 }
 
-// Helper to safely update text (NO CHANGE)
-function updateElement(id, value, dp = 0, color = null) {
-  const el = document.getElementById(id);
-  if (el) {
-    if (value !== undefined && value !== null) {
-      el.innerText = (typeof value === 'number') ? value.toFixed(dp) : value;
-    } else {
-      el.innerText = '--';
-    }
-    if (color) {
-      el.style.color = color;
-    }
-  }
-}
+// --- Socket.IO for camera feed ---
+const socketUrl = "https://YOUR_RENDER_APP.onrender.com"; // change
+const socket = io(socketUrl);
 
-// --- VIEW NAVIGATION (NO CHANGE) ---
-function showView(viewName) {
-  document.getElementById('dashboard-view').style.display = viewName === 'dashboard' ? 'block' : 'none';
-  document.getElementById('surveillance-view').style.display = viewName === 'surveillance' ? 'block' : 'none';
-
-  document.getElementById('btn-dashboard').classList.toggle('active', viewName === 'dashboard');
-  document.getElementById('btn-surveillance').classList.toggle('active', viewName === 'surveillance');
-
-  if (viewName === 'surveillance') {
-    document.getElementById('liveFeed').src = CAMERA_STREAM_URL;
-  } else {
-    document.getElementById('liveFeed').src = "";
-  }
-}
-showView('dashboard');
-
-// --- CONTROL PANEL (MODIFIED) ---
-modeToggle.addEventListener('change', () => {
-  isManualMode = modeToggle.checked;
-  document.querySelectorAll('.control-item').forEach(el => {
-    el.classList.toggle('disabled', !isManualMode);
-  });
+const liveImg = document.getElementById('liveFeed');
+socket.on('connect', () => {
+  console.log('socket connected', socket.id);
 });
-
-// Helper function to send an MQTT control message
-function sendControlCommand(device) {
-    if (!isManualMode) return;
-    
-    // 1. Send the command (same as before)
-    const payload = JSON.stringify({ device: device });
-    const message = new Paho.MQTT.Message(payload);
-    message.destinationName = MQTT_CONTROL_TOPIC;
-    mqttClient.send(message);
-    console.log(`Sent command: ${payload}`);
-
-    // **FIX 2: Optimistically update the local state**
-    if (device === 'fan') {
-      controlState.fan = !controlState.fan; // Toggle the state
-    } else if (device === 'light') {
-      controlState.light = !controlState.light;
-    } else if (device === 'door') {
-      controlState.door = !controlState.door;
-    }
-
-    // **FIX 2: Immediately update the UI**
-    updateControlUI();
-}
-
-function toggleFan() {
-  sendControlCommand('fan');
-}
-
-function toggleLight() {
-  sendControlCommand('light');
-}
-
-function toggleDoor() {
-  sendControlCommand('door');
-}
-
-// Function to update the control buttons based on the `controlState` (NO CHANGE)
-function updateControlUI() {
-  // Fan
-  const fanItem = document.getElementById('fan-control');
-  const fanStatus = document.getElementById('fan-status');
-  fanItem.classList.toggle('active', controlState.fan === 1);
-  fanStatus.innerText = controlState.fan === 1 ? 'ON' : 'OFF';
-
-  // Light
-  const lightItem = document.getElementById('light-control');
-  const lightStatus = document.getElementById('light-status');
-  lightItem.classList.toggle('active', controlState.light === 1);
-  lightStatus.innerText = controlState.light === 1 ? 'ON' : 'OFF';
-
-  // Door
-  const doorItem = document.getElementById('door-control');
-  const doorStatus = document.getElementById('door-status');
-  doorItem.classList.toggle('active', controlState.door === 1);
-  doorStatus.innerText = controlState.door === 1 ? 'OPEN' : 'CLOSED';
-}
+socket.on('frame', (dataUrl) => {
+  // dataUrl is "data:image/jpeg;base64,...."
+  if (liveImg) liveImg.src = dataUrl;
+});
+socket.on('disconnect', () => console.log('socket disconnected'));
