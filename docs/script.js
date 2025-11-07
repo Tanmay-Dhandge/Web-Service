@@ -134,12 +134,26 @@ modeToggle.addEventListener('change', () => {
 function sendControlCommand(device) {
     if (!isManualMode) return;
     
+    // 1. Send the command (same as before)
     const payload = JSON.stringify({ device: device });
     const message = new Paho.MQTT.Message(payload);
     message.destinationName = MQTT_CONTROL_TOPIC;
-    
     mqttClient.send(message);
     console.log(`Sent command: ${payload}`);
+
+    // --- ADD THIS NEW SECTION ---
+    // 2. Optimistically update the local state
+    if (device === 'fan') {
+      controlState.fan = !controlState.fan; // Toggle the state
+    } else if (device === 'light') {
+      controlState.light = !controlState.light;
+    } else if (device === 'door') {
+      controlState.door = !controlState.door;
+    }
+
+    // 3. Immediately update the UI
+    updateControlUI();
+    // --- END OF NEW SECTION ---
 }
 
 function toggleFan() {
